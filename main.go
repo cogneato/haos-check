@@ -33,8 +33,7 @@ const (
 
 	// Container registry
 	ghcrHost         = "ghcr.io"
-	ghcrTokenURL     = "https://ghcr.io/token?scope=repository:home-assistant/amd64-hassio-supervisor:pull"
-	ghcrManifestURL  = "https://ghcr.io/v2/home-assistant/amd64-hassio-supervisor/manifests/latest"
+	ghcrTokenURL     = "https://ghcr.io/token?scope=repository:home-assistant/green-homeassistant:pull"
 
 	// GitHub (for add-on repos)
 	githubAPIURL     = "https://api.github.com"
@@ -67,6 +66,7 @@ type CheckResult struct {
 	Details     string
 	Duration    time.Duration
 	Required    bool
+	Info        bool // informational only — failure is expected on some networks
 }
 
 // VersionInfo represents the Home Assistant version API response
@@ -170,36 +170,36 @@ func runAllChecks() []CheckResult {
 		category string
 		fn       func() CheckResult
 		required bool
+		info     bool
 	}{
 		// DNS Resolution checks
-		{"DNS: version.home-assistant.io", "DNS Resolution", checkDNS("version.home-assistant.io"), true},
-		{"DNS: ghcr.io", "DNS Resolution", checkDNS("ghcr.io"), true},
-		{"DNS: github.com", "DNS Resolution", checkDNS("github.com"), true},
-		{"DNS: checkonline.home-assistant.io", "DNS Resolution", checkDNS("checkonline.home-assistant.io"), true},
-		{"DNS: time.cloudflare.com", "DNS Resolution", checkDNS("time.cloudflare.com"), true},
+		{"DNS: version.home-assistant.io", "DNS Resolution", checkDNS("version.home-assistant.io"), true, false},
+		{"DNS: ghcr.io", "DNS Resolution", checkDNS("ghcr.io"), true, false},
+		{"DNS: github.com", "DNS Resolution", checkDNS("github.com"), true, false},
+		{"DNS: checkonline.home-assistant.io", "DNS Resolution", checkDNS("checkonline.home-assistant.io"), true, false},
+		{"DNS: time.cloudflare.com", "DNS Resolution", checkDNS("time.cloudflare.com"), true, false},
 
 		// HTTPS Connectivity
-		{"HTTPS: Version API", "Home Assistant Services", checkVersionAPI, true},
-		{"HTTPS: AppArmor Profiles", "Home Assistant Services", checkAppArmor, true},
-		{"HTTP: Connectivity Check", "Home Assistant Services", checkConnectivity, true},
+		{"HTTPS: Version API", "Home Assistant Services", checkVersionAPI, true, false},
+		{"HTTPS: AppArmor Profiles", "Home Assistant Services", checkAppArmor, true, false},
+		{"HTTP: Connectivity Check", "Home Assistant Services", checkConnectivity, true, false},
 
 		// Container Registry
-		{"Registry: GHCR Authentication", "Container Registry (ghcr.io)", checkGHCRAuth, true},
-		{"Registry: GHCR Manifest Access", "Container Registry (ghcr.io)", checkGHCRManifest, true},
+		{"Registry: GHCR Authentication", "Container Registry (ghcr.io)", checkGHCRAuth, true, false},
 
 		// GitHub
-		{"GitHub: API Access", "GitHub (Add-on Repos)", checkGitHubAPI, true},
-		{"GitHub: Repository Access", "GitHub (Add-on Repos)", checkGitHubRepo, true},
+		{"GitHub: API Access", "GitHub (Add-on Repos)", checkGitHubAPI, true, false},
+		{"GitHub: Repository Access", "GitHub (Add-on Repos)", checkGitHubRepo, true, false},
 
 		// NTP
-		{"NTP: time.cloudflare.com", "Time Synchronization", checkNTP, true},
+		{"NTP: time.cloudflare.com", "Time Synchronization", checkNTP, true, false},
 
-		// Network Quality
-		{"MTU: Path MTU Discovery", "Network Quality", checkMTU, false},
-		{"IPv6: Connectivity", "Network Quality", checkIPv6, false},
+		// Network Quality — informational, failure is normal on many home networks
+		{"MTU: Path MTU Discovery", "Network Quality", checkMTU, false, true},
+		{"IPv6: Connectivity", "Network Quality", checkIPv6, false, true},
 
 		// Optional checks
-		{"mDNS: Port 5353 (local discovery)", "Local Network", checkMDNS, false},
+		{"mDNS: Port 5353 (local discovery)", "Local Network", checkMDNS, false, false},
 	}
 
 	// Print progress header
@@ -213,12 +213,14 @@ func runAllChecks() []CheckResult {
 			category string
 			fn       func() CheckResult
 			required bool
+			info     bool
 		}) {
 			defer wg.Done()
 			result := c.fn()
 			result.Name = c.name
 			result.Category = c.category
 			result.Required = c.required
+			result.Info = c.info
 
 			mu.Lock()
 			results = append(results, result)
@@ -239,9 +241,12 @@ func printCheckResult(r CheckResult) {
 	yellow := color(colorYellow)
 	reset := color(colorReset)
 
+	cyan := color(colorCyan)
 	status := fmt.Sprintf("%s✓ PASS%s", green, reset)
 	if !r.Passed {
-		if r.Required {
+		if r.Info {
+			status = fmt.Sprintf("%sℹ INFO%s", cyan, reset)
+		} else if r.Required {
 			status = fmt.Sprintf("%s✗ FAIL%s", red, reset)
 		} else {
 			status = fmt.Sprintf("%s⚠ WARN%s", yellow, reset)
@@ -554,64 +559,6 @@ func checkGHCRAuth() CheckResult {
 }
 
 // GHCR manifest check
-func checkGHCRManifest() CheckResult {
-	start := time.Now()
-
-	// First get a token
-	client := &http.Client{Timeout: registryTimeout}
-	tokenResp, err := client.Get(ghcrTokenURL)
-	if err != nil {
-		return CheckResult{
-			Passed:   false,
-			Message:  fmt.Sprintf("Failed to get token: %v", err),
-			Duration: time.Since(start),
-		}
-	}
-	defer tokenResp.Body.Close()
-
-	var tokenData struct {
-		Token string `json:"token"`
-	}
-	if err := json.NewDecoder(tokenResp.Body).Decode(&tokenData); err != nil {
-		return CheckResult{
-			Passed:   false,
-			Message:  fmt.Sprintf("Failed to parse token: %v", err),
-			Duration: time.Since(start),
-		}
-	}
-
-	// Now try to access a manifest
-	req, _ := http.NewRequest("GET", ghcrManifestURL, nil)
-	req.Header.Set("Authorization", "Bearer "+tokenData.Token)
-	req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json")
-
-	resp, err := client.Do(req)
-	duration := time.Since(start)
-
-	if err != nil {
-		return CheckResult{
-			Passed:   false,
-			Message:  fmt.Sprintf("Failed to fetch manifest: %v", err),
-			Duration: duration,
-		}
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return CheckResult{
-			Passed:   false,
-			Message:  fmt.Sprintf("HTTP %d response (manifest)", resp.StatusCode),
-			Duration: duration,
-		}
-	}
-
-	return CheckResult{
-		Passed:   true,
-		Details:  "Container manifest accessible",
-		Duration: duration,
-	}
-}
-
 // GitHub API check
 func checkGitHubAPI() CheckResult {
 	start := time.Now()
