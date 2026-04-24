@@ -1,7 +1,7 @@
 # HAOS Network Readiness Checker - Build Makefile
 
 BINARY_NAME=haos-check
-VERSION=1.0.0
+VERSION=1.2.0
 BUILD_DIR=build
 
 # Build flags for smaller binaries

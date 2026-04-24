@@ -274,10 +274,13 @@ func printSummary(results []CheckResult) {
 	passed := 0
 	failed := 0
 	warnings := 0
+	infos := 0
 
 	for _, r := range results {
 		if r.Passed {
 			passed++
+		} else if r.Info {
+			infos++
 		} else if r.Required {
 			failed++
 		} else {
@@ -293,6 +296,9 @@ func printSummary(results []CheckResult) {
 	}
 	if warnings > 0 {
 		fmt.Printf("  %s⚠ Warnings:%s %d\n", yellow, reset, warnings)
+	}
+	if infos > 0 {
+		fmt.Printf("  %sℹ Info:%s    %d (normal for many home networks)\n", color(colorCyan), reset, infos)
 	}
 	fmt.Println()
 
@@ -329,6 +335,10 @@ func printSummary(results []CheckResult) {
 		fmt.Println()
 		fmt.Printf("%sNote:%s Some optional checks had warnings. HAOS will likely install,\n", yellow, reset)
 		fmt.Println("but you may need to address these for optimal operation.")
+	} else if infos > 0 && failed == 0 && warnings == 0 {
+		fmt.Println()
+		fmt.Printf("%sNote:%s MTU and IPv6 checks are informational — these commonly fail\n", color(colorCyan), reset)
+		fmt.Println("on home networks and do not affect HAOS first-boot.")
 	}
 
 	// Check for MTU issues and provide specific guidance
