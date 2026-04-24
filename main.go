@@ -305,7 +305,7 @@ func printSummary(results []CheckResult) {
 	if failed == 0 {
 		fmt.Printf("%s%s🎉 Your network is ready for Home Assistant OS!%s\n\n", bold, green, reset)
 		fmt.Println("You can proceed with the installation. HAOS should be able to:")
-		fmt.Println("  • Download the Supervisor and Home Assistant containers")
+		fmt.Println("  • Download the Home Assistant Core container")
 		fmt.Println("  • Sync time with NTP servers")
 		fmt.Println("  • Access add-on repositories")
 		fmt.Println("  • Reach the Home Assistant update servers")
