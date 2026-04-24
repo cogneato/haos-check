@@ -1,0 +1,43 @@
+#!/bin/sh
+set -e
+
+VERSION="v1.1.0"
+BASE_URL="https://github.com/cogneato/haos-check/releases/download/${VERSION}"
+
+detect_arch() {
+    ARCH=$(uname -m)
+    OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+
+    case "$OS" in
+        linux)
+            case "$ARCH" in
+                x86_64)  echo "haos-check-linux-amd64" ;;
+                aarch64) echo "haos-check-linux-arm64" ;;
+                armv7*)  echo "haos-check-linux-armv7" ;;
+                armv6*)  echo "haos-check-linux-armv6" ;;
+                *) echo ""; return 1 ;;
+            esac
+            ;;
+        darwin)
+            case "$ARCH" in
+                x86_64)  echo "haos-check-darwin-amd64" ;;
+                arm64)   echo "haos-check-darwin-arm64" ;;
+                *) echo ""; return 1 ;;
+            esac
+            ;;
+        *)
+            echo ""; return 1 ;;
+    esac
+}
+
+BINARY=$(detect_arch)
+if [ -z "$BINARY" ]; then
+    echo "Unsupported platform: $(uname -s) / $(uname -m)"
+    exit 1
+fi
+
+TMP=$(mktemp)
+curl -fsSL "${BASE_URL}/${BINARY}" -o "$TMP"
+chmod +x "$TMP"
+"$TMP"
+rm -f "$TMP"
