@@ -1,0 +1,23 @@
+# Run haos-check from inside a Docker container
+# This simulates the networking environment that HAOS Supervisor uses
+
+services:
+  # Test 1: Default bridge network (most common issues surface here)
+  haos-check-bridge:
+    build: .
+    image: haos-check:latest
+    container_name: haos-check-bridge
+    network_mode: bridge
+    # Pass through verbose flag if needed
+    command: ["-v"]
+
+  # Test 2: Host network (bypasses Docker networking entirely)
+  # If this works but bridge fails, it's a Docker network issue
+  haos-check-host:
+    build: .
+    image: haos-check:latest
+    container_name: haos-check-host
+    network_mode: host
+    command: ["-v"]
+    profiles:
+      - host-mode
